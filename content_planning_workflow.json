@@ -1,0 +1,301 @@
+{
+  "name": "content-planning-workflow",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1400,
+        380
+      ],
+      "id": "d9ac13f3-567a-4885-860e-15a6d47e1170"
+    },
+    {
+      "parameters": {
+        "model": "llama3.1:latest",
+        "options": {
+          "format": "json"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        -700,
+        580
+      ],
+      "id": "85b4c736-2ffd-4fe8-adeb-ea7ec56e2774",
+      "name": "Ollama Chat Model",
+      "credentials": {
+        "ollamaApi": {
+          "id": "DbnV7fE9lNsuBlSr",
+          "name": "Ollama account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "[\n  {\n    \"topic\": \"string\",\n    \"description\": \"string\"\n  }\n]"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        -440,
+        560
+      ],
+      "id": "fac89cdb-b964-4580-b398-78caec7d847b",
+      "name": "Structured Output Parser"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate a unique content ID and initialize parameters\nconst contentId = `video_${Date.now()}`;\nconst defaultParams = {\n  niche: \"tech\",\n  targetLength: \"60s\",\n  style: \"informative\",\n  publishToYoutube: true,\n  publishToInstagram: true,\n  publishToTiktok: true,\n  publishToFacebook: true\n};\n\n// Merge with input parameters or use defaults\nconst contentParams = {\n  id: contentId,\n  niche: $input.item.json.niche || defaultParams.niche,\n  targetLength: $input.item.json.targetLength || defaultParams.targetLength,\n  style: $input.item.json.style || defaultParams.style,\n  timestamp: new Date().toISOString(),\n  publishToYoutube: $input.item.json.publishToYoutube !== undefined ? $input.item.json.publishToYoutube : defaultParams.publishToYoutube,\n  publishToInstagram: $input.item.json.publishToInstagram !== undefined ? $input.item.json.publishToInstagram : defaultParams.publishToInstagram,\n  publishToTiktok: $input.item.json.publishToTiktok !== undefined ? $input.item.json.publishToTiktok : defaultParams.publishToTiktok,\n  publishToFacebook: $input.item.json.publishToFacebook !== undefined ? $input.item.json.publishToFacebook : defaultParams.publishToFacebook\n};\n\n// Add metadata for tracking\nreturn {\n  ...contentParams,\n  status: \"initialized\"\n};"
+      },
+      "id": "e8c277d8-6837-47e4-84c1-7cfe40bb6f98",
+      "name": "Initialize Content Project",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        -1220,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Create directory structure with Windows-style paths\nconst contentId = $input.item.json.id;\nconst baseDir = \"/data/shared\";  // Using forward slashes is also valid in Windows\n\nreturn {\n  ...$input.item.json,\n  id: contentId,  // Make sure the ID is explicitly available\n  directories: {\n    main: `${baseDir}/${contentId}/main`,\n    audio: `${baseDir}/${contentId}/audio`,\n    images: `${baseDir}/${contentId}/images`,\n    video: `${baseDir}/${contentId}/video`,\n    final: `${baseDir}/${contentId}/final`\n  },\n  contentDir: `${baseDir}/${contentId}`\n};"
+      },
+      "id": "d30671ad-1c6f-4bc2-8303-6bd346e55f16",
+      "name": "Setup Directory Structure",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        -1000,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1) Grab the raw output object\nconst rawOutput = $input.item.json.output;\n\n// 2) Look for either \"response\" or \"topics\"\nlet aiData = rawOutput?.response || rawOutput?.topics || rawOutput;\n\n// 3) If we still don’t have data, attempt to parse if it’s a string\nif (typeof aiData === 'string') {\n  try {\n    aiData = JSON.parse(aiData);\n  } catch (e) {\n    throw new Error(\"Failed to parse string data as JSON: \" + e.message);\n  }\n}\n\n// 4) Finally, make sure aiData is an array of topics\nif (!Array.isArray(aiData)) {\n  throw new Error(\"No valid array found in 'output.response' or 'output.topics'\");\n}\n\n// 5) Now you can use the topics array safely\nconst selectedTopic = aiData[0];\nreturn {\n  ...$input.item.json,\n  selectedTopic,\n  allTopics: aiData,\n  workflowData: {\n    contentId: $input.item.json.id,\n    niche: $input.item.json.niche,\n    style: $input.item.json.style,\n    targetLength: $input.item.json.targetLength,\n    directories: $input.item.json.directories,\n    topic: selectedTopic.topic,\n    topicDescription: selectedTopic.description,\n    publishSettings: {\n      youtube: $input.item.json.publishToYoutube,\n      instagram: $input.item.json.publishToInstagram,\n      tiktok: $input.item.json.publishToTiktok,\n      facebook: $input.item.json.publishToFacebook\n    }\n  }\n};\n"
+      },
+      "id": "b5a74e80-5169-4fd3-8431-250bf73a0159",
+      "name": "Parse Topics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "fileName": "=/data/shared/{{ $('Initialize Content Project').item.json.id }}/main/content_plan.json",
+        "options": {
+          "append": false
+        }
+      },
+      "id": "b4e58313-653c-4b90-aa87-e7945fcca077",
+      "name": "Save Content Plan",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        260,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a creative content strategist who specializes in trending topics and engaging content ideas. Your job is to generate topic ideas that are both informative and attention-grabbing.\n\nGenerate 5 trending and engaging topics for a {{$node[\"Initialize Content Project\"].json[\"targetLength\"]}} video in the {{$node[\"Initialize Content Project\"].json[\"niche\"]}} niche with a {{$node[\"Initialize Content Project\"].json[\"style\"]}} style.\n\nFormat your response as a valid JSON array of objects, with each object having 'topic' and 'description' fields. Keep descriptions under 100 characters.\n\nExample format:\n[\n  {\n    \"topic\": \"The Future of AI in Healthcare\",\n    \"description\": \"How artificial intelligence is revolutionizing medical diagnosis and treatment\"\n  },\n  {...}\n]",
+        "hasOutputParser": true,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        -640,
+        380
+      ],
+      "id": "e736dbdb-053c-4fa4-9484-b7379610aa3b",
+      "name": "Generate Topics",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1) Convert the current item's JSON to a string\nconst jsonString = JSON.stringify($input.item.json, null, 2);\n\n// 2) Convert the string to a Buffer\nconst binaryData = Buffer.from(jsonString, \"utf-8\");\n\n// 3) Return one item with a `binary` property\n//    The important part is naming the property \"data\" (binary.data).\nreturn [\n  {\n    json: $input.item.json,            // Keep or remove as you see fit\n    binary: {\n      data: {\n        data: binaryData,              // The raw Buffer\n        mimeType: \"application/json\",\n        fileName: \"content_plan.json\"\n      }\n    }\n  }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        60,
+        380
+      ],
+      "id": "b48a0bcc-ba38-43e8-b614-bbb483031d7b",
+      "name": "Convert JSON to Binary"
+    },
+    {
+      "parameters": {
+        "command": "=mkdir -p /data/shared/{{$json.id}}/main\nmkdir -p /data/shared/{{$json.id}}/audio\nmkdir -p /data/shared/{{$json.id}}/images\nmkdir -p /data/shared/{{$json.id}}/video\nmkdir -p /data/shared/{{$json.id}}/final\necho \"Directories created successfully\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -820,
+        380
+      ],
+      "id": "ca49f25e-a418-40a5-a88e-ce298e63c8d0",
+      "name": "Execute Command"
+    },
+    {
+      "parameters": {
+        "requestMethod": "POST",
+        "url": "http://host.docker.internal:5678/webhook-test/script-generation",
+        "jsonParameters": true,
+        "options": {},
+        "bodyParametersJson": "={\n  \"contentId\": \"{{ $('Setup Directory Structure').item.json.id }}\",\n  \"niche\": \"{{ $('Setup Directory Structure').item.json.niche }}\",\n  \"style\": \"{{ $('Setup Directory Structure').item.json.style }}\",\n  \"targetLength\": \"{{ $('Setup Directory Structure').item.json.targetLength }}\",\n  \"directories\": {{JSON.stringify($('Setup Directory Structure').item.json.directories)}},\n  \"selectedTopic\": {\n    \"topic\": \"{{$json.selectedTopic.topic}}\",\n    \"description\": \"{{$json.selectedTopic.description}}\"\n  }\n}"
+      },
+      "id": "aae02568-3373-4776-96e8-dcf2651ca30e",
+      "name": "Trigger Script Generation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        -120,
+        620
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Initialize Content Project",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Generate Topics",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Generate Topics",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Initialize Content Project": {
+      "main": [
+        [
+          {
+            "node": "Setup Directory Structure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Setup Directory Structure": {
+      "main": [
+        [
+          {
+            "node": "Execute Command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Topics": {
+      "main": [
+        [
+          {
+            "node": "Trigger Script Generation",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Convert JSON to Binary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Topics": {
+      "main": [
+        [
+          {
+            "node": "Parse Topics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert JSON to Binary": {
+      "main": [
+        [
+          {
+            "node": "Save Content Plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Content Plan": {
+      "main": [
+        []
+      ]
+    },
+    "Execute Command": {
+      "main": [
+        [
+          {
+            "node": "Generate Topics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Script Generation": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "6f39173c-e662-4b88-87e4-b3ea98316e93",
+  "meta": {
+    "instanceId": "4e52379637041ff10799c16d4fe1175e0d88d75b24685ea7cde857d7eef2b827"
+  },
+  "id": "mSiLbiocw1CyX4wD",
+  "tags": [
+    {
+      "createdAt": "2025-02-26T15:32:11.089Z",
+      "updatedAt": "2025-02-26T15:32:11.089Z",
+      "id": "He5P86YILA9R8z98",
+      "name": "content-creation"
+    }
+  ]
+}
