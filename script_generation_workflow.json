@@ -111,8 +111,10 @@
     {
       "parameters": {
         "requestMethod": "POST",
-        "url": "=http://localhost:5678/webhook/audio-generation",
-        "options": {}
+        "url": "http://host.docker.internal:5678/webhook-test/audio-generation",
+        "jsonParameters": true,
+        "options": {},
+        "bodyParametersJson": "={\n  \"contentId\": \"{{ $('Script Generation Webhook').first().json.body.contentId }}\",\n  \"directories\": {{ JSON.stringify($node[\"Script Generation Webhook\"].json.body.directories) }},\n  \"fullScript\": {{ JSON.stringify($('Save Script Text').item.json.output.script) }},\n  \"title\": \"{{ $('Save Script Text').item.json.output.title }}\"\n}"
       },
       "name": "Trigger Audio Generation",
       "type": "n8n-nodes-base.httpRequest",
@@ -129,7 +131,7 @@
         "url": "=http://host.docker.internal:5678/webhook-test/visual-generation",
         "jsonParameters": true,
         "options": {},
-        "bodyParametersJson": "={\n  \"contentId\": \"{{ $json.contentId }}\",\n  \"directories\": {{JSON.stringify($json.directories)}},\n  \"sections\": {{JSON.stringify($node[\"Sections Agent\"].json.output.sections)}},\n  \"niche\": \"{{$node[\"Script Generation Webhook\"].json.body.niche}}\",\n  \"style\": \"{{$node[\"Script Generation Webhook\"].json.body.style}}\"\n}"
+        "bodyParametersJson": "={\n  \"contentId\": \"{{ $('Script Generation Webhook').first().json.body.contentId }}\",\n  \"directories\": {{JSON.stringify($node[\"Script Generation Webhook\"].json.body.directories)}},\n  \"sections\": {{JSON.stringify($node[\"Sections Agent\"].json.output.sections)}},\n  \"niche\": \"{{$node[\"Script Generation Webhook\"].json.body.niche}}\",\n  \"style\": \"{{$node[\"Script Generation Webhook\"].json.body.style}}\"\n}"
       },
       "name": "Trigger Visual Generation",
       "type": "n8n-nodes-base.httpRequest",
@@ -200,7 +202,7 @@
     {
       "parameters": {
         "promptType": "define",
-        "text": "=You are a professional script writer who specializes in creating engaging {{ $json.body.style }} style content for social media videos. Your goal is to create a script for a {{ $json.body.targetLength }} video about {{ $json.body.selectedTopic.topic }} in the {{ $json.body.niche }} niche.\n\nThe description of this topic is: {{ $json.body.selectedTopic.description }}\n\nCreate a script that delivers valuable information with an attention-grabbing opening and clear call to action at the end.\n\nProvide your response/output in this exact JSON format:\n{\n  \"title\": \"An engaging, clickbaity title for the video\",\n  \"script\": \"The full script as a single string\",\n  \"call_to_action\": \"Clear call to action for the end of the video\"\n}",
+        "text": "=You are a professional script writer who specializes in creating engaging {{ $json.body.style }} style content for social media videos. Your goal is to create a script for a {{ $json.body.targetLength }} video about {{ $json.body.selectedTopic.topic }} in the {{ $json.body.niche }} niche.\n\nThe description of this topic is: {{ $json.body.selectedTopic.description }}\n\nCreate a script that delivers valuable information with an attention-grabbing opening and clear call to action at the end.\nRules for the script:\n- No scene directions, just voiceover text.\n- No filler phrases like 'imagine this' or 'what if I told you'.\n- Prioritize rhythm, punchy delivery, and engaging wordplay.\n- Avoid characters that ElevenLabs' voice AI might mispronounce, such as \"*\", \"/\", \"\\\\\",\"_\", or special symbols that could disrupt the flow of speech.\nAnd replace \" by '.\n- Ensure the text is structured naturally for clear and realistic pronunciation by AI voices.\n\nProvide your response/output in this exact JSON format:\n{\n  \"title\": \"An engaging, clickbaity title for the video\",\n  \"script\": \"The full script as a single string\",\n  \"call_to_action\": \"Clear call to action for the end of the video\"\n}",
         "hasOutputParser": true,
         "options": {}
       },
@@ -507,9 +509,11 @@
   },
   "active": true,
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "timezone": "Asia/Tokyo",
+    "callerPolicy": "workflowsFromSameOwner"
   },
-  "versionId": "c78efe56-2a12-4d2f-b36c-0ea17c8ba799",
+  "versionId": "a7f2ce17-0fcc-4260-aeb3-3e2b69df7502",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "4e52379637041ff10799c16d4fe1175e0d88d75b24685ea7cde857d7eef2b827"
