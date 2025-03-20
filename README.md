@@ -1,4 +1,4 @@
-# n8n Video Content Creation Automation
+# n8n Video Content Creation Automation (More info comming soon)
 
 A complete, locally-hosted system for automating content creation workflows using n8n. This system leverages local AI models, FFmpeg for video processing, and coordinates the entire content creation pipeline from idea generation to publishing.
 
@@ -44,8 +44,10 @@ cd n8n_video_content_creation
 ```
 
 ### 2. Configure Environment
+Refer to this repo for n8n, postgres and qdrant environnement settings:  
+https://github.com/coleam00/ai-agents-masterclass/tree/main/local-ai-packaged
 
-Create a `.env` file in the project root with the following contents:
+Update the `.env` file in the project root with the following contents:
 
 ```
 POSTGRES_USER=n8n
@@ -62,9 +64,10 @@ N8N_USER_MANAGEMENT_JWT_SECRET=your-random-jwt-secret
 docker compose --profile gpu-nvidia up -d
 ```
 
-### 4. Start Stable Diffusion WebUI
-
-In a separate terminal:
+### 4.Stable Diffusion WebUI
+You can find the repo here:   
+https://github.com/AbdBarho/stable-diffusion-webui-docker?tab=readme-ov-file  
+Start Stable Diffusion WebUI in a separate terminal :
 
 ```bash
 cd stable-diffusion-webui-docker
@@ -101,7 +104,6 @@ Set up the following credentials in n8n:
 
 - **ElevenLabs API**: For voice generation
 - **Google API** (optional): For YouTube publishing
-- **PostgreSQL**: For database access
 
 ## Workflow System Architecture
 
