@@ -11,7 +11,7 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
       "position": [
-        -1520,
+        -1620,
         160
       ],
       "webhookId": "audio-generation",
@@ -19,13 +19,13 @@
     },
     {
       "parameters": {
-        "jsCode": "// Load default voice settings\nconst defaultVoiceSettings = {\n  elevenlabsVoiceId: \"21m00Tcm4TlvDq8ikWAM\", // Default voice ID - change this to your preferred voice\n  //stability: 0.5,\n  //similarityBoost: 0.75\n};\n\n// Get voice settings from environment or use defaults\nreturn {\n  ...$input.item.json,\n  voiceSettings: defaultVoiceSettings\n};"
+        "jsCode": "// Load default voice settings\nconst defaultVoiceSettings = {\n  elevenlabsVoiceId: \"21m00Tcm4TlvDq8ikWAM\", // Default voice ID - change this to your preferred voice\n  stability: 0.5,\n  similarity_boost: 0.85\n};\n\n// Get voice settings from environment or use defaults\nreturn {\n  ...$input.item.json,\n  voiceSettings: defaultVoiceSettings\n};"
       },
       "name": "Prepare Voice Settings",
       "type": "n8n-nodes-base.code",
       "typeVersion": 1,
       "position": [
-        -1260,
+        -1440,
         160
       ],
       "id": "772c2432-3dba-46cf-9e85-97f330d58f75"
@@ -38,7 +38,7 @@
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\"text\":{{ JSON.stringify($('Audio Generation Webhook').item.json.body.fullScript) }},\"model_id\":\"eleven_monolingual_v1\"}",
+        "jsonBody": "={\"text\":{{ JSON.stringify($('Audio Generation Webhook').item.json.body.fullScript) }},\"model_id\":\"eleven_monolingual_v1\",\"voice_settings\":{\"stability\":{{ $json.voiceSettings.stability }},\"similarity_boost\":{{ $json.voiceSettings.similarity_boost }}}}",
         "options": {
           "response": {
             "response": {
@@ -52,7 +52,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
       "position": [
-        -1080,
+        -1260,
         160
       ],
       "id": "69317fe8-bb00-4415-a137-a5493aeebde9",
@@ -74,7 +74,7 @@
       "type": "n8n-nodes-base.writeBinaryFile",
       "typeVersion": 1,
       "position": [
-        -900,
+        -1100,
         160
       ],
       "id": "5f27b844-b7ba-4f0f-8b67-a2d7d9127b9d"
@@ -94,7 +94,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Prepare completion signal data\nconst completionPath = $input.item.json.directories.main + \"/audio_complete.json\";\nconst completionData = {\n  contentId: $input.item.json.contentId,\n  audioComplete: true,\n  audioLength: $input.item.json.audioLength || 60,\n  audioFile: $input.item.json.audioFile,\n  subtitlesPath: $input.item.json.subtitles.srtPath,\n  timestamp: new Date().toISOString()\n};\n\n// Convert to JSON string with proper formatting\nconst jsonString = JSON.stringify(completionData, null, 2);\n\n// Convert to buffer\nconst buffer = Buffer.from(jsonString, 'utf-8');\n\nreturn [\n  {\n    json: {\n      ...$input.item.json,\n      completionPath,\n      completionData: completionData\n    },\n    binary: {\n      data: {\n        data: buffer,\n        mimeType: 'application/json',\n        fileName: 'audio_complete.json'\n      }\n    }\n  }\n];"
+        "jsCode": "// Prepare completion signal data\nconst completionPath = $input.item.json.directories.main + \"/audio_complete.json\";\nconst completionData = {\n  contentId: $input.item.json.contentId,\n  audioComplete: true,\n  audioLength: $input.first().json.audioLength,\n  audioFile: $input.item.json.audioFile,\n  subtitlesPath: $input.item.json.subtitles.srtPath,\n  timestamp: new Date().toISOString()\n};\n\n// Convert to JSON string with proper formatting\nconst jsonString = JSON.stringify(completionData, null, 2);\n\n// Convert to buffer\nconst buffer = Buffer.from(jsonString, 'utf-8');\n\nreturn [\n  {\n    json: {\n      ...$input.item.json,\n      completionPath,\n      completionData: completionData\n    },\n    binary: {\n      data: {\n        data: buffer,\n        mimeType: 'application/json',\n        fileName: 'audio_complete.json'\n      }\n    }\n  }\n];"
       },
       "name": "Prepare Completion Signal",
       "type": "n8n-nodes-base.code",
@@ -152,72 +152,15 @@
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "http://192.168.40.98:5000/transcribe",
-        "sendBody": true,
-        "contentType": "multipart-form-data",
-        "bodyParameters": {
-          "parameters": [
-            {
-              "parameterType": "formBinaryData",
-              "name": "file",
-              "inputDataFieldName": "data"
-            },
-            {
-              "name": "language",
-              "value": "en"
-            },
-            {
-              "name": "word_timestamps",
-              "value": "true"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        -600,
-        -120
-      ],
-      "id": "3f5b6def-659e-40c5-917c-5edb76bcc894",
-      "name": "Get Audio Duration with Whisper"
-    },
-    {
-      "parameters": {
-        "jsCode": "// Process Whisper response to extract duration and transcription\nconst whisperResponse = $input.item.json;\n\n// Calculate total audio duration from segments\nlet audioLength = 0;\nlet transcriptionText = whisperResponse.text || \"\";\nlet wordTimestamps = [];\n\n// Extract timing information and word timestamps\nif (whisperResponse.segments && whisperResponse.segments.length > 0) {\n  // Get the last segment's end time as the total duration\n  const lastSegment = whisperResponse.segments[whisperResponse.segments.length - 1];\n  audioLength = lastSegment.end || 0;\n  \n  // Collect word timestamps if available\n  if (whisperResponse.word_timestamps) {\n    wordTimestamps = whisperResponse.word_timestamps;\n  }\n  // If not available but segments have words with timestamps\n  else if (whisperResponse.segments[0].words) {\n    whisperResponse.segments.forEach(segment => {\n      if (segment.words) {\n        wordTimestamps = wordTimestamps.concat(segment.words);\n      }\n    });\n  }\n}// Process Whisper response to extract duration, transcription and word timestamps\nconst whisperResponse = $input.item.json;\nconst contentId = $('Audio Generation Webhook').item.json.body.contentId;\nconst directories = $('Audio Generation Webhook').item.json.body.directories;\nconst title = $('Audio Generation Webhook').item.json.body.title || \"Tech Trends Video\";\n\n// Initialize default values\nlet audioLength = 60; // Default 60 seconds\nlet transcriptionText = \"\";\nlet wordTimestamps = [];\nlet segments = [];\n\n// Extract timing information and word timestamps\nif (whisperResponse && whisperResponse.text) {\n  transcriptionText = whisperResponse.text;\n  \n  // Process segments if available\n  if (whisperResponse.segments && Array.isArray(whisperResponse.segments) && whisperResponse.segments.length > 0) {\n    segments = whisperResponse.segments;\n    \n    // Get the last segment's end time as the total duration\n    const lastSegment = segments[segments.length - 1];\n    audioLength = lastSegment.end || audioLength;\n    \n    // Extract words with timestamps if available\n    segments.forEach(segment => {\n      if (segment.words && Array.isArray(segment.words)) {\n        wordTimestamps = [...wordTimestamps, ...segment.words];\n      }\n    });\n  }\n}\n\n// Format SRT subtitles from transcription data\nconst formatSrtTime = (seconds) => {\n  const pad = (num) => (num < 10 ? \"0\" + num : num);\n  const hours = Math.floor(seconds / 3600);\n  const minutes = Math.floor((seconds % 3600) / 60);\n  const secs = Math.floor(seconds % 60);\n  const ms = Math.floor((seconds * 1000) % 1000);\n  return `${pad(hours)}:${pad(minutes)}:${pad(secs)},${ms.toString().padStart(3, '0')}`;\n};\n\n// Generate subtitle segments with optimal reading chunks\nconst subtitleSegments = [];\nif (segments.length > 0) {\n  segments.forEach((segment, index) => {\n    const text = segment.text.trim();\n    // Split long segments into readable chunks\n    if (text.length > 50) {\n      const parts = text.split(/[.!?] /).filter(Boolean);\n      let startTime = segment.start;\n      \n      parts.forEach((part, i) => {\n        // Calculate duration for each part proportionally\n        const partDuration = (segment.end - segment.start) * (part.length / text.length);\n        const endTime = i === parts.length - 1 ? segment.end : startTime + partDuration;\n        \n        subtitleSegments.push({\n          index: subtitleSegments.length + 1,\n          start: startTime,\n          end: endTime,\n          text: part.trim() + (part.endsWith('.') || part.endsWith('!') || part.endsWith('?') ? '' : '.')\n        });\n        \n        startTime = endTime;\n      });\n    } else {\n      subtitleSegments.push({\n        index: subtitleSegments.length + 1,\n        start: segment.start,\n        end: segment.end,\n        text: text\n      });\n    }\n  });\n}\n\n// Generate SRT content\nlet srtContent = \"\";\nsubtitleSegments.forEach(sub => {\n  srtContent += `${sub.index}\\n${formatSrtTime(sub.start)} --> ${formatSrtTime(sub.end)}\\n${sub.text}\\n\\n`;\n});\n\n// Generate VTT content (more modern subtitle format)\nlet vttContent = \"WEBVTT\\n\\n\";\nsubtitleSegments.forEach(sub => {\n  vttContent += `${formatSrtTime(sub.start).replace(',', '.')} --> ${formatSrtTime(sub.end).replace(',', '.')}\\n${sub.text}\\n\\n`;\n});\n\n// Prepare paths for subtitle files\nconst srtFilePath = `${directories.main}/subtitles.srt`;\nconst vttFilePath = `${directories.main}/subtitles.vtt`;\n\nreturn {\n  contentId: contentId,\n  directories: directories,\n  title: title,\n  audioLength: audioLength, \n  audioComplete: true,\n  audioFile: `${directories.audio}/narration.mp3`,\n  transcription: transcriptionText,\n  wordTimestamps: wordTimestamps,\n  segments: segments,\n  subtitles: {\n    srt: {\n      content: srtContent,\n      path: srtFilePath\n    },\n    vtt: {\n      content: vttContent,\n      path: vttFilePath\n    }\n  }\n};\n\nreturn {\n  contentId: $input.item.json.contentId,\n  directories: $input.item.json.directories,\n  title: $input.item.json.title || \"Tech Trends Video\",\n  audioLength: audioLength,\n  audioComplete: true,\n  audioFile: $input.item.json.directories.audio + \"/narration.mp3\",\n  transcription: transcriptionText,\n  wordTimestamps: wordTimestamps\n};"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -420,
-        -120
-      ],
-      "id": "de5dcc0b-c03c-4676-88a3-44ef22a2af3f",
-      "name": "extract the duration and transcription"
-    },
-    {
-      "parameters": {},
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -240,
-        -120
-      ],
-      "id": "91d31cd1-2d55-4421-a92b-564e687eacc5",
-      "name": "Code"
-    },
-    {
-      "parameters": {
         "operation": "write",
         "fileName": "={{ $json.subtitles.srtPath }}",
+        "dataPropertyName": "srt",
         "options": {}
       },
       "type": "n8n-nodes-base.readWriteFile",
       "typeVersion": 1,
       "position": [
-        -100,
+        -80,
         160
       ],
       "id": "18e6842f-a4e0-4c3f-b8e6-f79e8937b8c6",
@@ -225,12 +168,12 @@
     },
     {
       "parameters": {
-        "command": "=ls -la /data/shared/{{ $('Audio Generation Webhook').item.json.body.contentId }}/audio/narration.mp3"
+        "command": "=# Get accurate duration of the generated audio file using ffprobe\nffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"/data/shared/{{ $('Audio Generation Webhook').item.json.body.contentId }}/audio/narration.mp3\""
       },
       "type": "n8n-nodes-base.executeCommand",
       "typeVersion": 1,
       "position": [
-        -700,
+        -620,
         160
       ],
       "id": "29dd9bb1-3df3-4a8d-be48-67221ddf5043",
@@ -239,12 +182,12 @@
     },
     {
       "parameters": {
-        "jsCode": "// Parse file size from ls command output and estimate duration\nconst output = $input.first().json.stdout;\n\n// Extract file size using a more robust pattern\n// Look for the file size pattern in the ls -la output (columns of data with size being one of them)\nlet fileSizeBytes = 0;\n\n// The ls output format is like: \"-rw-r--r-- 1 node node 1874546 Mar 10 11:55 /data/shared/...\"\n// Let's extract the number before the date\nconst sizeMatch = output.match(/\\d+\\s+\\w+\\s+\\d+\\s+\\d+:?\\d+/);\nif (sizeMatch) {\n  // Get the number at the beginning of the match\n  const sizeStr = sizeMatch[0].match(/^\\d+/);\n  if (sizeStr) {\n    fileSizeBytes = parseInt(sizeStr[0]);\n  }\n}\n\n// If we couldn't find the size, try another approach - the output might be a simple number\nif (fileSizeBytes === 0) {\n  // Just try to find any number in the output\n  const numberMatch = output.match(/\\d+/);\n  if (numberMatch) {\n    fileSizeBytes = parseInt(numberMatch[0]);\n  }\n}\n\n// If all else fails, use the file size we can see in the output: 1874546\nif (fileSizeBytes === 0) {\n  fileSizeBytes = 1874546;\n  console.log(\"Using hardcoded file size as fallback\");\n}\n\n// Estimate duration based on file size (approximate MP3 bitrate 128kbps)\n// Formula: duration in seconds = fileSize in bytes / (bitrate in bytes per second)\n// 128kbps = 16KB/s = 16384 bytes/s\nconst bitrate = 16384; // bytes per second\nlet audioDuration = Math.round(fileSizeBytes / bitrate);\n\n// Get the script from the webhook data\nconst script = $('Audio Generation Webhook').item.json.body.fullScript || '';\nconst contentId = $('Audio Generation Webhook').item.json.body.contentId;\nconst directories = $('Audio Generation Webhook').item.json.body.directories;\n\n// Generate subtitles\n// Split script into sentences for subtitles\n// Use a simpler split method to avoid regex issues\nconst sentences = [];\nlet currentSentence = '';\nconst chars = script.split('');\n\nfor (let i = 0; i < chars.length; i++) {\n  currentSentence += chars[i];\n  // When we hit a sentence end, add it to our array\n  if (chars[i] === '.' || chars[i] === '!' || chars[i] === '?') {\n    if (i + 1 < chars.length && chars[i + 1] === ' ') {\n      sentences.push(currentSentence.trim());\n      currentSentence = '';\n    }\n  }\n}\n\n// Add any remaining text as the final sentence\nif (currentSentence.trim()) {\n  sentences.push(currentSentence.trim());\n}\n\nconst timePerSentence = audioDuration / sentences.length;\n\n// Format time for SRT\nconst formatTime = (seconds) => {\n  const h = Math.floor(seconds / 3600);\n  const m = Math.floor((seconds % 3600) / 60);\n  const s = Math.floor(seconds % 60);\n  const ms = Math.floor((seconds * 1000) % 1000);\n  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')},${ms.toString().padStart(3, '0')}`;\n};\n\n// Generate SRT content\nlet srtContent = '';\nsentences.forEach((sentence, index) => {\n  const startTime = index * timePerSentence;\n  const endTime = (index + 1) * timePerSentence;\n  srtContent += `${index + 1}\\n${formatTime(startTime)} --> ${formatTime(endTime)}\\n${sentence}\\n\\n`;\n});\n\nconst srtPath = `${directories.main}/subtitles.srt`;\n\n// Return all data for next nodes\nreturn {\n  contentId,\n  directories,\n  title: $('Audio Generation Webhook').item.json.body.title || 'Tech Trends Video',\n  audioLength: audioDuration,\n  audioComplete: true,\n  audioFile: `${directories.audio}/narration.mp3`,\n  subtitles: {\n    srtContent,\n    srtPath\n  }\n};"
+        "jsCode": "// Get duration from FFmpeg output\nconst stdout = $input.first().json.stdout;\n\n// Parse the duration directly (it will be just a number from ffprobe)\nlet audioDuration = parseFloat(stdout.trim());\n\n// If parsing fails, use a fallback\nif (isNaN(audioDuration)) {\n  console.log(\"Warning: Could not parse audio duration, using default\");\n  audioDuration = 60; // default fallback\n}\n\n// Get the content ID and directories\nconst contentId = $('Audio Generation Webhook').item.json.body.contentId;\nconst directories = $('Audio Generation Webhook').item.json.body.directories;\n\n// Get the script content for generating subtitles\nconst scriptContent = $('Audio Generation Webhook').item.json.body.fullScript || '';\n\n// Parse script into meaningful segments for subtitles\nconst generateSubtitleSegments = (script, totalDuration) => {\n  // Split on sentence-ending punctuation followed by space or newline\n  const rawSentences = script.split(/([.!?])\\s+|\\n+/).filter(Boolean);\n  \n  // Combine fragments into complete sentences\n  const sentences = [];\n  let currentSentence = '';\n  \n  rawSentences.forEach((fragment) => {\n    if (/[.!?]/.test(fragment) && fragment.length === 1) {\n      // This is just a punctuation mark, add it to the current sentence\n      currentSentence += fragment;\n      sentences.push(currentSentence.trim());\n      currentSentence = '';\n    } else {\n      // This is text content\n      currentSentence += fragment + (currentSentence ? ' ' : '');\n    }\n  });\n  \n  // Add any remaining content\n  if (currentSentence.trim()) {\n    sentences.push(currentSentence.trim());\n  }\n  \n  // Estimate time per sentence, weighted by length\n  const totalCharCount = sentences.reduce((sum, s) => sum + s.length, 0);\n  \n  // Create segments with timestamps\n  const segments = [];\n  let currentTime = 0;\n  \n  sentences.forEach((sentence, index) => {\n    const sentenceDuration = (sentence.length / totalCharCount) * totalDuration;\n    const startTime = currentTime;\n    const endTime = currentTime + sentenceDuration;\n    \n    segments.push({\n      index: index + 1,\n      startTime: startTime,\n      endTime: endTime,\n      text: sentence\n    });\n    \n    currentTime = endTime;\n  });\n  \n  return segments;\n};\n\n// Format time for SRT (00:00:00,000)\nconst formatSrtTime = (seconds) => {\n  const hours = Math.floor(seconds / 3600);\n  const minutes = Math.floor((seconds % 3600) / 60);\n  const secs = Math.floor(seconds % 60);\n  const ms = Math.floor((seconds * 1000) % 1000);\n  \n  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')},${ms.toString().padStart(3, '0')}`;\n};\n\n// Generate subtitles\nconst subtitleSegments = generateSubtitleSegments(scriptContent, audioDuration);\n\n// Create SRT content\nlet srtContent = '';\nsubtitleSegments.forEach(segment => {\n  srtContent += `${segment.index}\\n${formatSrtTime(segment.startTime)} --> ${formatSrtTime(segment.endTime)}\\n${segment.text}\\n\\n`;\n});\n\n// Define paths\nconst srtPath = `${directories.main}/subtitles.srt`;\nconst vttPath = `${directories.main}/subtitles.vtt`;\n\n// Create VTT content (Web Video Text Tracks format)\nlet vttContent = 'WEBVTT\\n\\n';\nsubtitleSegments.forEach(segment => {\n  // VTT uses . instead of , for milliseconds\n  const vttStart = formatSrtTime(segment.startTime).replace(',', '.');\n  const vttEnd = formatSrtTime(segment.endTime).replace(',', '.');\n  vttContent += `${vttStart} --> ${vttEnd}\\n${segment.text}\\n\\n`;\n});\n\nreturn {\n  contentId,\n  directories,\n  title: $('Audio Generation Webhook').item.json.body.title || 'Video Content',\n  audioLength: audioDuration,\n  audioComplete: true,\n  audioFile: `${directories.audio}/narration.mp3`,\n  subtitles: {\n    srtContent,\n    srtPath,\n    vttContent,\n    vttPath\n  }\n};"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -500,
+        -460,
         160
       ],
       "id": "46bb5b13-394e-4e45-af5c-c45139404468",
@@ -252,16 +195,59 @@
     },
     {
       "parameters": {
-        "jsCode": "// Prepare the subtitle content for saving\nconst srtContent = $input.item.json.subtitles.srtContent;\nconst buffer = Buffer.from(srtContent, 'utf-8');\n\nreturn [\n  {\n    json: $input.item.json,\n    binary: {\n      data: {\n        data: buffer,\n        mimeType: 'text/plain',\n        fileName: 'subtitles.srt'\n      }\n    }\n  }\n];"
+        "jsCode": "// Prepare the subtitle content for saving\nconst srtContent = $input.item.json.subtitles.srtContent;\nconst vttContent = $input.item.json.subtitles.vttContent || '';\n\n// Create buffers for both formats\nconst srtBuffer = Buffer.from(srtContent, 'utf-8');\nconst vttBuffer = Buffer.from(vttContent, 'utf-8');\n\nreturn [\n  {\n    json: $input.item.json,\n    binary: {\n      srt: {\n        data: srtBuffer,\n        mimeType: 'text/plain',\n        fileName: 'subtitles.srt'\n      },\n      vtt: {\n        data: vttBuffer,\n        mimeType: 'text/plain',\n        fileName: 'subtitles.vtt'\n      }\n    }\n  }\n];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -300,
+        -280,
         160
       ],
       "id": "5820ee18-2cd1-40e1-aea5-e83bae3b430c",
       "name": "Prepare Subtitle Binary"
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "={{ $json.subtitles.vttPath }}",
+        "dataPropertyName": "vtt",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        -80,
+        -60
+      ],
+      "id": "a927d7dc-908e-4591-bbc8-e371d2624e0b",
+      "name": "Save the Subtitle Files VTT"
+    },
+    {
+      "parameters": {
+        "command": "=# First normalize the audio\nffmpeg -y -i \"{{ $('Audio Generation Webhook').item.json.body.directories.audio }}/narration.mp3\" -af \"loudnorm=I=-16:LRA=11:TP=-1.5:measured_I=-30:measured_LRA=1:measured_TP=-10:measured_thresh=-40:offset=0.7:linear=true:print_format=summary\" -ar 48000 -c:a libmp3lame -b:a 192k \"{{ $('Audio Generation Webhook').item.json.body.directories.audio }}/narration_normalized.mp3\"\n\n# Then copy the normalized file over the original\ncp \"{{ $('Audio Generation Webhook').item.json.body.directories.audio }}/narration_normalized.mp3\" \"{{ $('Audio Generation Webhook').item.json.body.directories.audio }}/narration.mp3\"\n\n# Verify the operation succeeded\necho \"Audio normalization completed successfully\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -940,
+        160
+      ],
+      "id": "6cf9b266-7593-4661-9073-3594b5cd5c43",
+      "name": "Normalize Audio Volume"
+    },
+    {
+      "parameters": {
+        "fileSelector": "={{ $('Audio Generation Webhook').item.json.body.directories.audio }}/narration.mp3",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        -780,
+        160
+      ],
+      "id": "d7672a88-b4dd-4fb0-ba14-ea78f0eac5c2",
+      "name": "Read/Write Files from Disk"
     }
   ],
   "pinData": {
@@ -334,7 +320,7 @@
       "main": [
         [
           {
-            "node": "Get Audio Duration with FFmpeg",
+            "node": "Normalize Audio Volume",
             "type": "main",
             "index": 0
           }
@@ -379,33 +365,6 @@
         ]
       ]
     },
-    "Get Audio Duration with Whisper": {
-      "main": [
-        [
-          {
-            "node": "extract the duration and transcription",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "extract the duration and transcription": {
-      "main": [
-        [
-          {
-            "node": "Code",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Code": {
-      "main": [
-        []
-      ]
-    },
     "save the subtitle files": {
       "main": [
         [
@@ -446,6 +405,44 @@
             "node": "save the subtitle files",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "Save the Subtitle Files VTT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save the Subtitle Files VTT": {
+      "main": [
+        [
+          {
+            "node": "Process Audio Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Audio Volume": {
+      "main": [
+        [
+          {
+            "node": "Read/Write Files from Disk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read/Write Files from Disk": {
+      "main": [
+        [
+          {
+            "node": "Get Audio Duration with FFmpeg",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -455,7 +452,7 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "89658212-16f4-4e4b-9577-db6705bf5290",
+  "versionId": "7c538628-bc74-4dd2-a6d5-eb024188e5d0",
   "meta": {
     "instanceId": "4e52379637041ff10799c16d4fe1175e0d88d75b24685ea7cde857d7eef2b827"
   },

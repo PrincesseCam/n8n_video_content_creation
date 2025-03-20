@@ -72,7 +72,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Extract sections and initialize variables \nlet sections = $input.first().json.output.enhanced_sections || [];\nlet niche = $('Visual Generation Webhook').first().json.body.niche || 'tech';\nlet style = $('Visual Generation Webhook').first().json.body.style || 'informative';\nlet contentId = $('Visual Generation Webhook').first().json.body.contentId || `fallback_${Date.now()}`;\nlet directories = $('Visual Generation Webhook').first().json.body.directories || {\n    main: \"/data/shared/fallback/main\",\n    audio: \"/data/shared/fallback/audio\",\n    images: \"/data/shared/fallback/images\",\n    video: \"/data/shared/fallback/video\",\n    final: \"/data/shared/fallback/final\"\n};\n\n// Create image prompts array for batching\nconst imagePrompts = sections.map((section, index) => {\n    return {\n        index,\n        section_name: section.section_name,\n        prompt: section.original_prompt,\n        enhancedPrompt: section.enhanced_prompt\n    };\n});\n\n// Default image settings optimized for NVIDIA 3050\nconst defaultImageSettings = {\n    width: 768,\n    height: 768,\n    steps: 30,\n    cfgScale: 7,\n    sampler: \"Euler a\",\n    negativePrompt: \"low quality, blurry, distorted, deformed, disfigured, bad anatomy, watermark, signature, out of frame, cropped\"\n};\n\nreturn {\n    contentId,\n    directories,\n    niche,\n    style,\n    imagePrompts,\n    imageSettings: defaultImageSettings,\n    totalImages: imagePrompts.length,\n    completedImages: 0,\n    // Initialize with the first image for the first batch\n    currentImageIndex: 0\n};"
+        "jsCode": "// Extract sections and initialize variables \nlet sections = $input.first().json.output.enhanced_sections || [];\nlet niche = $('Visual Generation Webhook').first().json.body.niche || 'tech';\nlet style = $('Visual Generation Webhook').first().json.body.style || 'informative';\nlet contentId = $('Visual Generation Webhook').first().json.body.contentId || `fallback_${Date.now()}`;\nlet directories = $('Visual Generation Webhook').first().json.body.directories || {\n    main: \"/data/shared/fallback/main\",\n    audio: \"/data/shared/fallback/audio\",\n    images: \"/data/shared/fallback/images\",\n    video: \"/data/shared/fallback/video\",\n    final: \"/data/shared/fallback/final\"\n};\n\n// Create image prompts array for batching\nconst imagePrompts = sections.map((section, index) => {\n    return {\n        index,\n        section_name: section.section_name,\n        prompt: section.original_prompt,\n        enhancedPrompt: section.enhanced_prompt\n    };\n});\n\n// Default image settings optimized for NVIDIA 3050\nconst defaultImageSettings = {\n    width: 768,\n    height: 768,\n    steps: 30,\n    cfgScale: 1,\n    sampler: \"Euler\",\n    negativePrompt: \"low quality, blurry, distorted, deformed, disfigured, bad anatomy, watermark, signature, out of frame, cropped\"\n};\n\nreturn {\n    contentId,\n    directories,\n    niche,\n    style,\n    imagePrompts,\n    imageSettings: defaultImageSettings,\n    totalImages: imagePrompts.length,\n    completedImages: 0,\n    // Initialize with the first image for the first batch\n    currentImageIndex: 0\n};"
       },
       "name": "Prepare Image Prompts",
       "type": "n8n-nodes-base.code",
@@ -86,10 +86,10 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://host.docker.internal:7861/sdapi/v1/txt2img",
+        "url": "http://host.docker.internal:7860/sdapi/v1/txt2img",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"prompt\": \"{{ $json.imagePrompts.enhancedPrompt }}, 8k, high quality, trending on artstation\",\n  \"negative_prompt\": \"{{$node[\"Prepare Image Prompts\"].json[\"imageSettings\"][\"negativePrompt\"]}}\",\n  \"width\": {{$node[\"Prepare Image Prompts\"].json[\"imageSettings\"][\"width\"]}},\n  \"height\": {{$node[\"Prepare Image Prompts\"].json[\"imageSettings\"][\"height\"]}},\n  \"steps\": {{$node[\"Prepare Image Prompts\"].json[\"imageSettings\"][\"steps\"]}},\n  \"cfg_scale\": {{$node[\"Prepare Image Prompts\"].json[\"imageSettings\"][\"cfgScale\"]}},\n  \"sampler_name\": \"{{$node[\"Prepare Image Prompts\"].json[\"imageSettings\"][\"sampler\"]}}\",\n  \"override_settings\": {\n    \"sd_model_checkpoint\": \"dreamshaperXL_v21TurboDPMSDE.safetensors [4496b36d48]\"\n  }\n}",
+        "jsonBody": "={\n  \"prompt\": \"{{ $json.imagePrompts.enhancedPrompt }}, 8k, high quality\",\n  \"seed\": -1,\n  \"sampler_name\": \"{{$node[\"Prepare Image Prompts\"].json[\"imageSettings\"][\"sampler\"]}}\",\n  \"scheduler\": \"Simple\",\n  \"batch_size\": 1,\n  \"n_iter\": 1,\n  \"steps\": {{$node[\"Prepare Image Prompts\"].json[\"imageSettings\"][\"steps\"]}},\n  \"cfg_scale\": {{$node[\"Prepare Image Prompts\"].json[\"imageSettings\"][\"cfgScale\"]}},\n  \"width\": {{$node[\"Prepare Image Prompts\"].json[\"imageSettings\"][\"width\"]}},\n  \"height\": {{$node[\"Prepare Image Prompts\"].json[\"imageSettings\"][\"height\"]}},\n  \"override_settings\": {\n    \"sd_model_checkpoint\": \"flux1-dev-fp8.safetensors\"\n  }\n}",
         "options": {
           "response": {
             "response": {
@@ -635,7 +635,7 @@
     "callerPolicy": "workflowsFromSameOwner",
     "timezone": "Asia/Tokyo"
   },
-  "versionId": "be132ea0-efae-4cee-b11a-1b837a74f49d",
+  "versionId": "022a6758-bd49-487a-af00-579c3012478f",
   "meta": {
     "instanceId": "4e52379637041ff10799c16d4fe1175e0d88d75b24685ea7cde857d7eef2b827"
   },

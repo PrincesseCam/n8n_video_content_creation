@@ -1,0 +1,437 @@
+{
+  "name": "video-assembly-workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "video-assembly",
+        "options": {}
+      },
+      "name": "Video Assembly Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -2300,
+        60
+      ],
+      "webhookId": "video-assembly",
+      "id": "e96842a9-81e6-4ab3-90f8-b5ec19078dc7"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare FFmpeg parameters for video creation\nconst contentId = $input.item.json.body.contentId || $input.item.json.contentId;\nconst directories = $input.item.json.body.directories || $input.item.json.directories;\nconst audioFile = $input.item.json.body.audioFile || $input.item.json.audioFile;\nconst imageFiles = $input.item.json.body.imageFiles || $input.item.json.imageFiles;\n\n// Create image list path with forward slashes for Docker\nconst imageListPath = `${directories.main}/images_list.txt`;\n\n// Create output paths with proper formatting for FFmpeg in Docker\nconst outputVideoPath = `${directories.final}/${contentId}_final.mp4`;\nconst subtitlesPath = `${directories.main}/subtitles.srt`;\n\n// Determine number of images\nconst numImages = Array.isArray(imageFiles) ? imageFiles.length : 5;\n\n// Try to read audio duration from audio_complete.json\n// Add command to fetch duration if needed\nconst audioCompletePath = `${directories.main}/audio_complete.json`;\n\n// Default duration if we can't get it from the file\nlet videoDuration = 60; // seconds\n\n// We'll read the audio_complete.json in a separate node and pass the duration\n// For now, use the number of images to calculate image duration\nlet imageDuration = 5; // default seconds per image\n\nreturn {\n  contentId,\n  directories,\n  audioFile,\n  imageFiles,\n  audioCompletePath,\n  ffmpegParams: {\n    imageListPath,\n    audioFile,\n    outputVideoPath,\n    subtitlesPath,\n    imageDuration,\n    youtubeVersion: `${directories.final}/youtube_fb_version.mp4`,\n    instaVersion: `${directories.final}/insta_tiktok_version.mp4`,\n    squareVersion: `${directories.final}/insta_square_version.mp4`,\n    subtitledYoutubeVersion: `${directories.final}/youtube_subtitled.mp4`,\n    subtitledInstaVersion: `${directories.final}/insta_subtitled.mp4`,\n    subtitledSquareVersion: `${directories.final}/square_subtitled.mp4`\n  }\n};"
+      },
+      "name": "Prepare FFmpeg Parameters",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        -2120,
+        60
+      ],
+      "id": "7b60d862-0c82-4f4d-93bd-2da1cb59f728"
+    },
+    {
+      "parameters": {
+        "command": "=# First, remove any existing file and create a fresh one\nrm -f \"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.imageListPath }}\"\ntouch \"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.imageListPath }}\"\n\n# Debug: print the duration values\necho \"Using image duration: {{ $('Parse Audio Duration').item.json.ffmpegParams.imageDuration }} seconds\"\necho \"Total audio duration: {{ $('Parse Audio Duration').item.json.audioDuration }} seconds\"\n\n# Format the list correctly for FFmpeg concat demuxer\n# Each file entry needs a duration except the last one\necho \"file '/data/shared/{{ $('Prepare FFmpeg Parameters').item.json.contentId }}/images/image00.png'\" >> \"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.imageListPath }}\"\necho \"duration {{ $('Parse Audio Duration').item.json.ffmpegParams.imageDuration }}\" >> \"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.imageListPath }}\"\n\necho \"file '/data/shared/{{ $('Prepare FFmpeg Parameters').item.json.contentId }}/images/image01.png'\" >> \"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.imageListPath }}\"\necho \"duration {{ $('Parse Audio Duration').item.json.ffmpegParams.imageDuration }}\" >> \"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.imageListPath }}\"\n\necho \"file '/data/shared/{{ $('Prepare FFmpeg Parameters').item.json.contentId }}/images/image02.png'\" >> \"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.imageListPath }}\"\necho \"duration {{ $('Parse Audio Duration').item.json.ffmpegParams.imageDuration }}\" >> \"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.imageListPath }}\"\n\necho \"file '/data/shared/{{ $('Prepare FFmpeg Parameters').item.json.contentId }}/images/image03.png'\" >> \"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.imageListPath }}\"\necho \"duration {{ $('Parse Audio Duration').item.json.ffmpegParams.imageDuration }}\" >> \"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.imageListPath }}\"\n\n# Last file should appear in the list but WITHOUT a duration\necho \"file '/data/shared/{{ $('Prepare FFmpeg Parameters').item.json.contentId }}/images/image04.png'\" >> \"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.imageListPath }}\"\n\n# Display the file content for debugging\necho \"----- Created image list file contents: -----\"\ncat \"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.imageListPath }}\"\necho \"-----------------------------------------\""
+      },
+      "name": "Create Image List",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -1380,
+        60
+      ],
+      "id": "8fe260a6-be2d-4777-849c-79e5e9596d28"
+    },
+    {
+      "parameters": {
+        "command": "=# Check that the image list has content\nif [ ! -s \"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.imageListPath }}\" ]; then\n  echo \"ERROR: Image list file is empty. Cannot proceed.\"\n  exit 1\nfi\n\n# Get the selected background music track\nMUSIC_TRACK=$(cat \"{{ $('Prepare FFmpeg Parameters').item.json.directories.main }}/selected_bg_music.txt\")\necho \"Using background music: $MUSIC_TRACK\"\n\n# Create a temporary directory for processing\nTEMP_DIR=\"{{ $('Prepare FFmpeg Parameters').item.json.directories.video }}/temp\"\nmkdir -p \"$TEMP_DIR\"\n\n# Get accurate durations\nNARRATION_PATH=\"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.audioFile }}\"\nNARRATION_DURATION=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"$NARRATION_PATH\")\nMUSIC_DURATION=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"$MUSIC_TRACK\")\necho \"Narration duration: $NARRATION_DURATION seconds\"\necho \"Music duration: $MUSIC_DURATION seconds\"\n\n# First, generate individual images with correct duration\necho \"Preparing individual image segments...\"\nTOTAL_IMAGES=5\nSEGMENT_DURATION=$(echo \"scale=2; $NARRATION_DURATION/$TOTAL_IMAGES\" | bc)\necho \"Each image segment will be $SEGMENT_DURATION seconds\"\n\n# Create a filelist for the final video assembly\necho \"# Final assembly filelist\" > \"$TEMP_DIR/final_assembly.txt\"\n\n# Generate individual image videos with exact durations\n# Using numerical iteration instead of brace expansion\nfor i in 0 1 2 3 4; do\n  IMAGE_PATH=\"/data/shared/{{ $('Prepare FFmpeg Parameters').item.json.contentId }}/images/image0$i.png\"\n  OUTPUT_PATH=\"$TEMP_DIR/segment_$i.mp4\"\n  \n  # If this is the last segment, add any remaining time to ensure total equals narration duration\n  if [ $i -eq 4 ]; then\n    REMAINING_DURATION=$(echo \"scale=2; $NARRATION_DURATION - ($SEGMENT_DURATION * 4)\" | bc)\n    echo \"Last segment will be $REMAINING_DURATION seconds to match narration exactly\"\n    SEGMENT_DURATION=$REMAINING_DURATION\n  fi\n  \n  echo \"Creating segment $i from $IMAGE_PATH for $SEGMENT_DURATION seconds\"\n  ffmpeg -y -loop 1 -i \"$IMAGE_PATH\" -c:v libx264 -tune stillimage -crf 23 -t $SEGMENT_DURATION \\\n    -pix_fmt yuv420p \"$OUTPUT_PATH\"\n  \n  # Add to assembly list\n  echo \"file '$OUTPUT_PATH'\" >> \"$TEMP_DIR/final_assembly.txt\"\ndone\n\n# Combine all image segments into a silent video\necho \"Combining image segments into a continuous video...\"\nffmpeg -y -f concat -safe 0 -i \"$TEMP_DIR/final_assembly.txt\" -c copy \"$TEMP_DIR/image_sequence.mp4\"\n\n# Prepare background music (loop or trim as necessary)\necho \"Preparing background music...\"\nif [ $(echo \"$MUSIC_DURATION < $NARRATION_DURATION\" | bc -l) -eq 1 ]; then\n  # Music is shorter than narration - we need to loop it\n  echo \"Music is shorter than narration - creating looped version\"\n  \n  # Calculate number of loops needed (round up)\n  LOOP_COUNT=$(echo \"($NARRATION_DURATION / $MUSIC_DURATION) + 0.5\" | bc | awk '{printf(\"%d\",$1+0.5)}')\n  echo \"Will loop music $LOOP_COUNT times to cover narration\"\n  \n  # Create concat file for music\n  rm -f \"$TEMP_DIR/music_loop.txt\"\n  \n  # Use seq for loop iteration\n  for i in $(seq 1 $LOOP_COUNT); do\n    echo \"file '$MUSIC_TRACK'\" >> \"$TEMP_DIR/music_loop.txt\"\n  done\n  \n  # Create looped music file\n  ffmpeg -y -f concat -safe 0 -i \"$TEMP_DIR/music_loop.txt\" -c copy \"$TEMP_DIR/extended_music.mp3\"\n  \n  # Trim to exact narration length\n  ffmpeg -y -i \"$TEMP_DIR/extended_music.mp3\" -t $NARRATION_DURATION -c copy \"$TEMP_DIR/final_music.mp3\"\nelse\n  # Music is longer than narration - just trim it\n  echo \"Music is longer than narration - trimming to match\"\n  ffmpeg -y -i \"$MUSIC_TRACK\" -t $NARRATION_DURATION -c copy \"$TEMP_DIR/final_music.mp3\"\nfi\n\n# Now combine everything: image sequence, narration, and background music\necho \"Combining image sequence with audio tracks...\"\nffmpeg -y -i \"$TEMP_DIR/image_sequence.mp4\" -i \"$NARRATION_PATH\" -i \"$TEMP_DIR/final_music.mp3\" \\\n  -filter_complex \"[1:a]volume=1.0[narration];[2:a]volume=0.2[music];[narration][music]amix=inputs=2:duration=first[aout]\" \\\n  -map 0:v -map \"[aout]\" -c:v copy -c:a aac -b:a 192k \\\n  \"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.outputVideoPath }}\"\n\n# Check if the video was created successfully\nif [ $? -eq 0 ]; then\n  echo \"Successfully created video with narration and background music\"\n  # Video stats\n  echo \"Final video stats:\"\n  ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.outputVideoPath }}\"\nelse\n  echo \"Error with complex approach, trying simpler method...\"\n  \n  # Alternative approach - directly create a slideshow with all images\n  echo \"Trying simpler slideshow method...\"\n  \n  # Create a simple concatenation file\n  rm -f \"$TEMP_DIR/simple_images.txt\"\n  echo \"file '/data/shared/{{ $('Prepare FFmpeg Parameters').item.json.contentId }}/images/image00.png'\" >> \"$TEMP_DIR/simple_images.txt\"\n  echo \"file '/data/shared/{{ $('Prepare FFmpeg Parameters').item.json.contentId }}/images/image01.png'\" >> \"$TEMP_DIR/simple_images.txt\"\n  echo \"file '/data/shared/{{ $('Prepare FFmpeg Parameters').item.json.contentId }}/images/image02.png'\" >> \"$TEMP_DIR/simple_images.txt\"\n  echo \"file '/data/shared/{{ $('Prepare FFmpeg Parameters').item.json.contentId }}/images/image03.png'\" >> \"$TEMP_DIR/simple_images.txt\"\n  echo \"file '/data/shared/{{ $('Prepare FFmpeg Parameters').item.json.contentId }}/images/image04.png'\" >> \"$TEMP_DIR/simple_images.txt\"\n  \n  # Use a simpler approach - generate a slideshow with fixed framerate\n  ffmpeg -y -framerate $(echo \"5/$NARRATION_DURATION\" | bc -l) \\\n    -pattern_type glob -i \"/data/shared/{{ $('Prepare FFmpeg Parameters').item.json.contentId }}/images/*.png\" \\\n    -i \"$NARRATION_PATH\" -i \"$TEMP_DIR/final_music.mp3\" \\\n    -filter_complex \"[1:a]volume=1.0[narration];[2:a]volume=0.2[music];[narration][music]amix=inputs=2:duration=first[aout]\" \\\n    -map 0:v -map \"[aout]\" -c:v libx264 -pix_fmt yuv420p -c:a aac -b:a 192k -shortest \\\n    \"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.outputVideoPath }}\"\n  \n  if [ $? -ne 0 ]; then\n    echo \"Error with slideshow method, trying one final approach...\"\n    \n    # Final fallback: Use a single image with a longer duration and overlay the others\n    IMAGE_BASE=\"/data/shared/{{ $('Prepare FFmpeg Parameters').item.json.contentId }}/images/image\"\n    ffmpeg -y -loop 1 -i \"${IMAGE_BASE}00.png\" -i \"${IMAGE_BASE}01.png\" -i \"${IMAGE_BASE}02.png\" \\\n      -i \"${IMAGE_BASE}03.png\" -i \"${IMAGE_BASE}04.png\" -i \"$NARRATION_PATH\" -i \"$TEMP_DIR/final_music.mp3\" \\\n      -filter_complex \"\n      [0:v]trim=duration=$(echo \"$NARRATION_DURATION/5\" | bc -l)[v0];\n      [1:v]trim=duration=$(echo \"$NARRATION_DURATION/5\" | bc -l)[v1];\n      [2:v]trim=duration=$(echo \"$NARRATION_DURATION/5\" | bc -l)[v2];\n      [3:v]trim=duration=$(echo \"$NARRATION_DURATION/5\" | bc -l)[v3];\n      [4:v]trim=duration=$(echo \"$NARRATION_DURATION/5\" | bc -l)[v4];\n      [v0][v1][v2][v3][v4]concat=n=5:v=1:a=0[v];\n      [5:a]volume=1.0[narration];\n      [6:a]volume=0.2[music];\n      [narration][music]amix=inputs=2:duration=first[aout]\n      \" \\\n      -map \"[v]\" -map \"[aout]\" -c:v libx264 -pix_fmt yuv420p -c:a aac -b:a 192k \\\n      \"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.outputVideoPath }}\"\n    \n    if [ $? -ne 0 ]; then\n      echo \"All methods failed. Creating a single image video with audio as last resort\"\n      \n      # Ultimate fallback - just use the first image\n      ffmpeg -y -loop 1 -i \"/data/shared/{{ $('Prepare FFmpeg Parameters').item.json.contentId }}/images/image00.png\" \\\n        -i \"$NARRATION_PATH\" -i \"$TEMP_DIR/final_music.mp3\" \\\n        -filter_complex \"[1:a]volume=1.0[narration];[2:a]volume=0.2[music];[narration][music]amix=inputs=2:duration=first[aout]\" \\\n        -map 0:v -map \"[aout]\" -c:v libx264 -pix_fmt yuv420p -c:a aac -b:a 192k -shortest \\\n        \"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.outputVideoPath }}\"\n      \n      if [ $? -ne 0 ]; then\n        echo \"All video creation methods failed\"\n        exit 1\n      fi\n    fi\n  fi\nfi\n\n# Clean up temporary files\nrm -rf \"$TEMP_DIR\""
+      },
+      "name": "Create Video with FFmpeg",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -1200,
+        60
+      ],
+      "id": "462ad504-09b6-442e-9891-6cfae89ac057"
+    },
+    {
+      "parameters": {
+        "command": "=# Create platform-specific versions (aspect ratios)\necho \"Creating platform-specific versions...\"\n\n# Get the input video\nINPUT_VIDEO=\"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.outputVideoPath }}\"\nAUDIO_FILE=\"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.audioFile }}\"\n\n# YouTube/Facebook (16:9) - Landscape\necho \"Creating 16:9 version for YouTube/Facebook...\"\nffmpeg -y -i \"$INPUT_VIDEO\" -c:v libx264 -preset medium -crf 23 -c:a copy \\\n  -vf \"scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black\" \\\n  \"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.youtubeVersion }}\"\n\n# Instagram/TikTok (9:16) - Portrait\necho \"Creating 9:16 version for Instagram/TikTok...\"\nffmpeg -y -i \"$INPUT_VIDEO\" -c:v libx264 -preset medium -crf 23 -c:a copy \\\n  -vf \"scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black\" \\\n  \"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.instaVersion }}\"\n\n# Instagram Square (1:1)\necho \"Creating 1:1 square version for Instagram...\"\nffmpeg -y -i \"$INPUT_VIDEO\" -c:v libx264 -preset medium -crf 23 -c:a copy \\\n  -vf \"scale=1080:1080:force_original_aspect_ratio=decrease,pad=1080:1080:(ow-iw)/2:(oh-ih)/2:black\" \\\n  \"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.squareVersion }}\"\n\n# Check if all files were created successfully\nif [ -f \"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.youtubeVersion }}\" ] && \\\n   [ -f \"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.instaVersion }}\" ] && \\\n   [ -f \"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.squareVersion }}\" ]; then\n  echo \"Successfully created all platform-specific versions\"\nelse\n  echo \"Warning: Some platform versions may not have been created correctly\"\nfi\n\n# Verify the files were created\necho \"Checking platform-specific versions:\"\nls -la \"{{ $('Prepare FFmpeg Parameters').item.json.directories.final }}/\""
+      },
+      "name": "Generate Platform Versions",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -1020,
+        60
+      ],
+      "id": "c68f712e-61d7-491a-bd60-7242b1b56c7b"
+    },
+    {
+      "parameters": {
+        "command": "=# Check if subtitles file exists\nSUBTITLE_PATH=\"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.subtitlesPath }}\"\nif [ -f \"$SUBTITLE_PATH\" ]; then\n  echo \"Subtitle file found, creating versions with burned-in subtitles\"\n  \n  # Define subtitle style for each format\n  # YouTube/Facebook (16:9) - Standard position at bottom\n  YOUTUBE_SUBTITLE_STYLE=\"FontName=Arial,FontSize=24,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H80000000,BorderStyle=4,Outline=2,Shadow=1,Alignment=2\"\n  \n  # Instagram/TikTok (9:16) - Positioned near the bottom with smaller font\n  # Using Alignment=2 (bottom-center) with a high MarginV value\n  # Reduced font size to 16 (from 20) and increased margin to 50 to move subtitles lower\n  INSTAGRAM_SUBTITLE_STYLE=\"FontName=Arial,FontSize=12,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H80000000,BorderStyle=4,Outline=2,Shadow=1,Alignment=2,MarginV=50\"\n  \n  # Square (1:1) - Closer to bottom with smaller font\n  # Reduced font size to 18 (from 22) and increased margin to 100 for better positioning\n  SQUARE_SUBTITLE_STYLE=\"FontName=Arial,FontSize=18,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H80000000,BorderStyle=4,Outline=2,Shadow=1,Alignment=2,MarginV=50\"\n  \n  # YouTube/Facebook with subtitles (16:9)\n  echo \"Creating YouTube/Facebook version with subtitles...\"\n  ffmpeg -y -i \"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.youtubeVersion }}\" \\\n    -vf \"subtitles=$SUBTITLE_PATH:force_style='$YOUTUBE_SUBTITLE_STYLE'\" \\\n    -c:v libx264 -preset medium -crf 23 -c:a copy \\\n    \"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.subtitledYoutubeVersion }}\"\n  \n  # Instagram/TikTok with subtitles (9:16)\n  echo \"Creating Instagram/TikTok version with subtitles...\"\n  ffmpeg -y -i \"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.instaVersion }}\" \\\n    -vf \"subtitles=$SUBTITLE_PATH:force_style='$INSTAGRAM_SUBTITLE_STYLE'\" \\\n    -c:v libx264 -preset medium -crf 23 -c:a copy \\\n    \"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.subtitledInstaVersion }}\"\n  \n  # Square with subtitles (1:1)\n  echo \"Creating Square version with subtitles...\"\n  ffmpeg -y -i \"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.squareVersion }}\" \\\n    -vf \"subtitles=$SUBTITLE_PATH:force_style='$SQUARE_SUBTITLE_STYLE'\" \\\n    -c:v libx264 -preset medium -crf 23 -c:a copy \\\n    \"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.subtitledSquareVersion }}\"\n  \n  echo \"Created all versions with subtitles\"\nelse\n  echo \"Subtitles file not found at $SUBTITLE_PATH\"\n  echo \"Using versions without subtitles\"\n  \n  # Just copy the files to maintain consistent naming\n  cp \"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.youtubeVersion }}\" \\\n     \"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.subtitledYoutubeVersion }}\"\n  cp \"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.instaVersion }}\" \\\n     \"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.subtitledInstaVersion }}\"\n  cp \"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.squareVersion }}\" \\\n     \"{{ $('Prepare FFmpeg Parameters').item.json.ffmpegParams.subtitledSquareVersion }}\"\nfi\n\n# Verify the files were created\necho \"Checking final video files:\"\nls -la \"{{ $('Prepare FFmpeg Parameters').item.json.directories.final }}/\""
+      },
+      "name": "Create Subtitled Versions",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -840,
+        60
+      ],
+      "id": "9b95bbb1-a1c4-4f41-af21-94d208594da0"
+    },
+    {
+      "parameters": {
+        "filePath": "={{ $('Prepare FFmpeg Parameters').item.json.directories.main + \"/script.json\" }}"
+      },
+      "name": "Read Script JSON",
+      "type": "n8n-nodes-base.readBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        -660,
+        60
+      ],
+      "id": "67122be4-0899-499c-bf72-70d196dc6674"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse the script JSON to get metadata\nlet scriptData;\ntry {\n  const fileContent = $binary.data.toString('utf8');\n  scriptData = JSON.parse(fileContent);\n} catch (e) {\n  // Default values if we can't parse the script\n  scriptData = {\n    title: $input.item.json.contentId,\n    hashtags: ['#content', '#video'],\n    call_to_action: 'Like and subscribe!'\n  };\n}\n\n// Format platform-specific content\nconst title = scriptData.title || \"Video Content\";\nconst hashtags = Array.isArray(scriptData.hashtags) ? scriptData.hashtags.join(' ') : \"#content #video\";\nconst callToAction = scriptData.call_to_action || scriptData.callToAction || \"Like and subscribe!\";\n\n// YouTube description (longer, more detailed)\nconst youtubeDescription = `${title}\\n\\n${scriptData.script || ''}\\n\\n${callToAction}\\n\\n${hashtags}`;\n\n// Instagram/TikTok (shorter, emoji-rich)\nconst instaDescription = `✨ ${title} ✨\\n\\n${callToAction}\\n\\n${hashtags}`;\n\n// Facebook (medium length)\nconst fbDescription = `${title}\\n\\n${callToAction}\\n\\n${hashtags}`;\n\nreturn {\n  ...$input.item.json,\n  platformContent: {\n    youtube: {\n      title: title,\n      description: youtubeDescription,\n      tags: Array.isArray(scriptData.hashtags) ? scriptData.hashtags.map(tag => tag.replace('#', '')) : [\"content\", \"video\"]\n    },\n    instagram: {\n      caption: instaDescription\n    },\n    tiktok: {\n      caption: instaDescription\n    },\n    facebook: {\n      caption: fbDescription\n    }\n  },\n  videoFiles: {\n    youtube: $('Prepare FFmpeg Parameters').first().json.ffmpegParams.youtubeVersion,\n    instagram: $('Prepare FFmpeg Parameters').first().json.ffmpegParams.subtitledInstaVersion,\n    tiktok: $('Prepare FFmpeg Parameters').first().json.ffmpegParams.subtitledInstaVersion,\n    facebook: $('Prepare FFmpeg Parameters').first().json.ffmpegParams.youtubeVersion,\n    square: $('Prepare FFmpeg Parameters').first().json.ffmpegParams.subtitledSquareVersion,\n    original: $('Prepare FFmpeg Parameters').first().json.ffmpegParams.outputVideoPath\n  }\n};"
+      },
+      "name": "Format Platform Content",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        -480,
+        60
+      ],
+      "id": "88620aa3-9e25-4b5c-8040-fc550dcb51ba"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare the platform metadata for saving\nconst platformMetadata = {\n  contentId: $input.item.json.contentId,\n  directories: $input.item.json.directories,\n  platformContent: $input.item.json.platformContent,\n  videoFiles: $input.item.json.videoFiles,\n  timestamp: new Date().toISOString()\n};\n\n// Convert to JSON string with nice formatting\nconst jsonString = JSON.stringify(platformMetadata, null, 2);\n\n// Convert to Buffer for binary data\nconst buffer = Buffer.from(jsonString, 'utf-8');\n\nreturn [{\n  json: $input.item.json,\n  binary: {\n    data: {\n      data: buffer,\n      mimeType: 'application/json',\n      fileName: 'platform_metadata.json'\n    }\n  }\n}];"
+      },
+      "name": "Prepare Metadata",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        60
+      ],
+      "id": "aa72995f-3495-4273-9915-8c2857094db3"
+    },
+    {
+      "parameters": {
+        "fileName": "={{ $('Video Assembly Webhook').item.json.body.directories.main }}/platform_metadata.json",
+        "options": {}
+      },
+      "name": "Save Platform Metadata",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        -120,
+        60
+      ],
+      "id": "2b318f37-cd38-4e09-816c-b701351dda55"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://host.docker.internal:5678/webhook-test/publishing",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"contentId\": \"{{ $('Prepare FFmpeg Parameters').item.json.contentId }}\",\n  \"directories\": {{JSON.stringify($('Prepare FFmpeg Parameters').item.json.directories)}},\n  \"platformContent\": {{JSON.stringify($json.platformContent)}},\n  \"videoFiles\": {{JSON.stringify($json.videoFiles)}}\n}",
+        "options": {}
+      },
+      "name": "Trigger Publishing Workflow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        80,
+        0
+      ],
+      "id": "96d6683a-0a51-4450-a104-6385d79e4a02"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        220
+      ],
+      "id": "3393503b-b232-40f7-bb26-51d24189fe21"
+    },
+    {
+      "parameters": {
+        "command": "=# Create a completion marker file to indicate assembly is done\necho '{\"contentId\": \"{{ $('Video Assembly Webhook').item.json.body.contentId }}\", \"assemblyComplete\": true, \"timestamp\": \"'$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")'\" }' > \"{{ $('Video Assembly Webhook').item.json.body.directories.main }}/assembly_complete.json\"\n\n# List the final directory to verify the created files\nls -la \"{{ $('Video Assembly Webhook').item.json.body.directories.final }}/\""
+      },
+      "name": "Create Completion Marker",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -120,
+        -100
+      ],
+      "id": "0a4b7cac-5c78-474f-8615-3aee5e2d742f"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the raw output from the command\nconst stdout = $input.first().json.stdout;\n\n// Parse the duration as a number\nconst audioDuration = parseFloat(stdout.trim());\n\n// Validate the parsed value\nif (isNaN(audioDuration)) {\n  console.error(\"Invalid audio duration extracted:\", stdout);\n  throw new Error(\"Failed to extract valid audio duration\");\n}\n\nconsole.log(`Successfully extracted audio duration: ${audioDuration} seconds`);\n\n// Calculate image duration\nconst numImages = Array.isArray($input.item.json.imageFiles) ? $input.item.json.imageFiles.length : 5;\nconst imageDuration = Math.ceil(audioDuration / numImages);\n\nconsole.log(`Using ${numImages} images with ${imageDuration} seconds per image`);\n\n// Return the updated parameters\nreturn {\n  ...$input.item.json,\n  audioDuration,\n  ffmpegParams: {\n    ...$input.item.json.ffmpegParams,\n    imageDuration,\n    totalDuration: audioDuration\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1760,
+        60
+      ],
+      "id": "be801298-2720-44c9-a1f8-17c449cd5e89",
+      "name": "Parse Audio Duration"
+    },
+    {
+      "parameters": {
+        "command": "=# List all background music files\necho \"Available background music tracks:\"\nls -la /data/shared/BG_music/\n\n# Get video duration in seconds\nVIDEO_DURATION={{ $json.audioDuration }}\necho \"Video duration: $VIDEO_DURATION seconds\"\n\n# Simple random selection using ls and shuf\nselected_track=$(ls /data/shared/BG_music/*.mp3 | shuf -n 1)\n\necho \"Randomly selected background music: $selected_track\"\necho \"$selected_track\" > \"{{ $('Prepare FFmpeg Parameters').item.json.directories.main }}/selected_bg_music.txt\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -1560,
+        60
+      ],
+      "id": "e644d7d3-0835-48c1-a2ae-3e616d7d2cbe",
+      "name": "Select Background Music"
+    },
+    {
+      "parameters": {
+        "command": "=# Read and parse the audio duration directly using grep\ngrep -o '\"audioLength\": [0-9.]*' \"/data/shared/{{ $json.contentId }}/main/audio_complete.json\" | grep -o '[0-9.]*'"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -1940,
+        60
+      ],
+      "id": "2e9468af-517e-4db4-a81d-174525e44a61",
+      "name": "Extract audio lenght"
+    }
+  ],
+  "pinData": {
+    "Video Assembly Webhook": [
+      {
+        "json": {
+          "headers": {
+            "accept": "application/json,text/html,application/xhtml+xml,application/xml,text/*;q=0.9, image/*;q=0.8, */*;q=0.7",
+            "content-type": "application/json",
+            "user-agent": "axios/1.7.4",
+            "content-length": "658",
+            "accept-encoding": "gzip, compress, deflate, br",
+            "host": "host.docker.internal:5678",
+            "connection": "keep-alive"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "contentId": "video_1741064777985",
+            "directories": {
+              "main": "/data/shared/video_1741064777985/main",
+              "audio": "/data/shared/video_1741064777985/audio",
+              "images": "/data/shared/video_1741064777985/images",
+              "video": "/data/shared/video_1741064777985/video",
+              "final": "/data/shared/video_1741064777985/final"
+            },
+            "audioFile": "/data/shared/video_1741064777985/audio/narration.mp3",
+            "imageFiles": [
+              "/data/shared/video_1741064777985/images\\image00.png",
+              "/data/shared/video_1741064777985/images\\image01.png",
+              "/data/shared/video_1741064777985/images\\image02.png",
+              "/data/shared/video_1741064777985/images\\image03.png",
+              "/data/shared/video_1741064777985/images\\image04.png"
+            ]
+          },
+          "webhookUrl": "http://localhost:5678/webhook-test/video-assembly",
+          "executionMode": "test"
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Video Assembly Webhook": {
+      "main": [
+        [
+          {
+            "node": "Prepare FFmpeg Parameters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare FFmpeg Parameters": {
+      "main": [
+        [
+          {
+            "node": "Extract audio lenght",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Image List": {
+      "main": [
+        [
+          {
+            "node": "Create Video with FFmpeg",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Video with FFmpeg": {
+      "main": [
+        [
+          {
+            "node": "Generate Platform Versions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Platform Versions": {
+      "main": [
+        [
+          {
+            "node": "Create Subtitled Versions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Subtitled Versions": {
+      "main": [
+        [
+          {
+            "node": "Read Script JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Script JSON": {
+      "main": [
+        [
+          {
+            "node": "Format Platform Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Platform Content": {
+      "main": [
+        [
+          {
+            "node": "Prepare Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Metadata": {
+      "main": [
+        [
+          {
+            "node": "Save Platform Metadata",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Create Completion Marker",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Platform Metadata": {
+      "main": [
+        [
+          {
+            "node": "Trigger Publishing Workflow",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Completion Marker": {
+      "main": [
+        [
+          {
+            "node": "Trigger Publishing Workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Audio Duration": {
+      "main": [
+        [
+          {
+            "node": "Select Background Music",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select Background Music": {
+      "main": [
+        [
+          {
+            "node": "Create Image List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract audio lenght": {
+      "main": [
+        [
+          {
+            "node": "Parse Audio Duration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "40894095-3bd2-4405-ba95-f6ff9a2a7424",
+  "meta": {
+    "instanceId": "4e52379637041ff10799c16d4fe1175e0d88d75b24685ea7cde857d7eef2b827"
+  },
+  "id": "jDW6YmPZy9Cl2evV",
+  "tags": []
+}

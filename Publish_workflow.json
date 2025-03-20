@@ -1,0 +1,572 @@
+{
+  "name": "Publish workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "publishing",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "name": "Publishing Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -1400,
+        180
+      ],
+      "webhookId": "publishing",
+      "id": "6940ddcc-924d-4e01-af26-6f2781cddba7"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract content details from the webhook\nconst contentId = $input.item.json.body.contentId || $input.item.json.contentId;\nconst directories = $input.item.json.body.directories || $input.item.json.directories;\n\n// If no specific directories are provided, construct from contentId\nlet dirStructure = directories;\nif (!dirStructure && contentId) {\n  dirStructure = {\n    main: `/data/shared/${contentId}/main`,\n    audio: `/data/shared/${contentId}/audio`,\n    images: `/data/shared/${contentId}/images`,\n    video: `/data/shared/${contentId}/video`,\n    final: `/data/shared/${contentId}/final`\n  };\n}\n\n// Define the path to the video file we'll publish\nconst videoFilePath = `${dirStructure.final}/${contentId}_final.mp4`;\n\n// Define Blotato API key (will be passed through headers)\nconst blotato_api_key = \"o:uigh;o9gi;u7g\"; // Replace with your actual API key\n\n// Set up accountIDs - you'll need to add your own IDs here\nconst platformIds = {\n  \"instagram\": \"\",\n  \"youtube\": \"\",\n  \"tiktok\": \"\",\n  \"facebook\": \"\",\n  \"facebook_page_id\": \"\",\n  \"threads\": \"\",\n  \"twitter\": \"\",\n  \"linkedin\": \"\",\n  \"linkedin_page_id\": \"\",\n  \"pinterest_board_id\": \"\"\n}\n\n// Read platform-specific content file (script data)\ntry {\n  // This requires that the platform_metadata.json file exists\n  // We'll use a default if it doesn't\n  const platformMetadataPath = `${dirStructure.main}/platform_metadata.json`;\n  const metadata = require(platformMetadataPath);\n  \n  return {\n    contentId,\n    directories: dirStructure,\n    videoFilePath,\n    blotato_api_key,\n    platformIds,\n    platformContent: metadata.platformContent\n  };\n} catch (error) {\n  // Construct default platform content if metadata file doesn't exist\n  console.log(`Couldn't find platform metadata, using defaults: ${error.message}`);\n  \n  // Try to read script.json for basic info\n  let title = \"Video Content\";\n  let description = \"Check out this amazing video content!\";\n  try {\n    const scriptPath = `${dirStructure.main}/script.json`;\n    const scriptData = require(scriptPath);\n    title = scriptData.title || title;\n    description = scriptData.script || description;\n  } catch (e) {\n    console.log(`Couldn't read script.json: ${e.message}`);\n  }\n  \n  return {\n    contentId,\n    directories: dirStructure,\n    videoFilePath,\n    blotato_api_key,\n    platformIds,\n    platformContent: {\n      youtube: {\n        title: title,\n        description: description\n      },\n      instagram: {\n        caption: `✨ ${title} ✨\\n\\n#content #video`\n      },\n      tiktok: {\n        caption: `${title} #trending #content #video` \n      },\n      twitter: {\n        caption: `${title}\\n\\n#content #video`\n      }\n    }\n  };\n}"
+      },
+      "name": "Prepare Publishing Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        -1200,
+        180
+      ],
+      "id": "a5a1782e-c426-4cf6-beed-f63bd75ad91a"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM content_videos WHERE content_id = '{{ $json.contentId }}' LIMIT 1;",
+        "additionalFields": {}
+      },
+      "name": "Check Existing Content",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        -1000,
+        180
+      ],
+      "id": "fae8898d-7f2b-4e74-b491-4efc5537aac5",
+      "credentials": {
+        "postgres": {
+          "id": "setkxZ59G66ed7Ts",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.count }}",
+              "operation": "equal"
+            }
+          ]
+        }
+      },
+      "name": "Content Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        -800,
+        180
+      ],
+      "id": "ed6dbc3d-8671-4828-8bfe-1437735589cc"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO content_videos (content_id, title, file_path, creation_date, youtube_status, instagram_status, tiktok_status, twitter_status)\nVALUES (\n  '{{ $json.contentId }}',\n  '{{ $json.platformContent.youtube.title }}',\n  '{{ $json.videoFilePath }}',\n  NOW(),\n  'pending',\n  'pending',\n  'pending',\n  'pending'\n) RETURNING *;",
+        "additionalFields": {}
+      },
+      "name": "Create Content Record",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        80
+      ],
+      "id": "35849916-efbc-4e11-a507-ce8c3acca36d",
+      "credentials": {
+        "postgres": {
+          "id": "setkxZ59G66ed7Ts",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE content_videos SET\n  youtube_status = 'for publishing',\n  instagram_status = 'for publishing',\n  tiktok_status = 'for publishing',\n  twitter_status = 'for publishing'\nWHERE content_id = '{{ $json.contentId }}'\nRETURNING *;",
+        "additionalFields": {}
+      },
+      "name": "Update Content Status",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        -600,
+        280
+      ],
+      "id": "e9ab1ae8-fd55-42c8-8a14-9dc812bc1739",
+      "credentials": {
+        "postgres": {
+          "id": "setkxZ59G66ed7Ts",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://backend.blotato.com/v2/media",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "blotato-api-key",
+              "value": "={{ $json.blotato_api_key }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "url",
+              "value": "={{ $json.videoFilePath }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Upload to Blotato Media",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        -400,
+        180
+      ],
+      "id": "7dec195b-bc01-4205-a656-c223e48b7229"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract the Blotato media URL from the response\nconst responseData = $input.item.json;\nlet mediaUrl = \"\";\n\n// Handle different response structures\nif (responseData.url) {\n  // Standard response format\n  mediaUrl = responseData.url;\n} else if (responseData.body && responseData.body.url) {\n  // Alternative nested format\n  mediaUrl = responseData.body.url;\n} else {\n  // Fallback - use original file path if we couldn't get a Blotato URL\n  mediaUrl = $input.item.json.videoFilePath;\n}\n\n// Return data with extracted URL\nreturn {\n  ...$input.item.json,\n  url: mediaUrl,\n  blotato_media_uploaded: !!mediaUrl\n};"
+      },
+      "name": "Extract Media URL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        -200,
+        180
+      ],
+      "id": "a75607d3-738f-4265-af72-43426c8c2efc"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://backend.blotato.com/v2/posts",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "blotato-api-key",
+              "value": "={{ $json.blotato_api_key }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n    \"post\": {\n        \"target\": {\n            \"targetType\": \"youtube\",\n            \"title\": \"{{ $json.platformContent.youtube.title }}\",\n            \"privacyStatus\": \"public\",\n            \"shouldNotifySubscribers\": false\n        },\n        \"content\": {\n            \"text\": \"{{ $json.platformContent.youtube.description }}\",\n            \"platform\": \"youtube\",\n            \"mediaUrls\": [\"{{ $json.url }}\"]\n        },\n        \"accountId\": \"{{ $json.platformIds.youtube }}\"\n    }\n}",
+        "options": {}
+      },
+      "name": "Publish to YouTube",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "3789619b-04eb-4925-b2a6-b773ba44fe65"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://backend.blotato.com/v2/posts",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "blotato-api-key",
+              "value": "={{ $json.blotato_api_key }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n    \"post\": {\n        \"target\": {\n            \"targetType\": \"instagram\"\n        },\n        \"content\": {\n            \"text\": \"{{ $json.platformContent.instagram.caption }}\",\n            \"platform\": \"instagram\",\n            \"mediaUrls\": [\"{{ $json.url }}\"]\n        },\n        \"accountId\": \"{{ $json.platformIds.instagram }}\"\n    }\n}",
+        "options": {}
+      },
+      "name": "Publish to Instagram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        0,
+        180
+      ],
+      "id": "f4c0de15-80c2-4949-8937-7d6042fd4eef"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://backend.blotato.com/v2/posts",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "blotato-api-key",
+              "value": "={{ $json.blotato_api_key }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n    \"post\": {\n        \"target\": {\n            \"targetType\": \"tiktok\",\n            \"privacyLevel\": \"PUBLIC_TO_EVERYONE\",\n            \"disabledComments\": false,\n            \"disabledDuet\": true,\n            \"disabledStitch\": true,\n            \"isBrandedContent\": false,\n            \"isYourBrand\": true,\n            \"isAiGenerated\": true\n        },\n        \"content\": {\n            \"text\": \"{{ $json.platformContent.tiktok.caption }}\",\n            \"platform\": \"tiktok\",\n            \"mediaUrls\": [\"{{ $json.url }}\"]\n        },\n        \"accountId\": \"{{ $json.platformIds.tiktok }}\"\n    }\n}",
+        "options": {}
+      },
+      "name": "Publish to TikTok",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        0,
+        360
+      ],
+      "id": "9f2d12d0-04e2-477c-9a75-f2acd25dd492"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://backend.blotato.com/v2/posts",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "blotato-api-key",
+              "value": "={{ $json.blotato_api_key }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n    \"post\": {\n        \"target\": {\n            \"targetType\": \"twitter\"\n        },\n        \"content\": {\n            \"text\": \"{{ $json.platformContent.twitter ? $json.platformContent.twitter.caption : $json.platformContent.instagram.caption }}\",\n            \"platform\": \"twitter\",\n            \"mediaUrls\": [\"{{ $json.url }}\"]\n        },\n        \"accountId\": \"{{ $json.platformIds.twitter }}\"\n    }\n}",
+        "options": {}
+      },
+      "name": "Publish to Twitter",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        0,
+        540
+      ],
+      "id": "62db39bd-6e2c-4ce6-9711-abd16d7bfc62"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Collect publishing results for tracking and analytics\nconst publishingResults = {\n  contentId: $input.item.json.contentId,\n  timestamp: new Date().toISOString(),\n  mediaUrl: $input.item.json.url,\n  platforms: []\n};\n\n// Check each platform node for results\nconst platformNodes = [\n  {name: \"Publish to YouTube\", dbField: \"youtube_status\"},\n  {name: \"Publish to Instagram\", dbField: \"instagram_status\"},\n  {name: \"Publish to TikTok\", dbField: \"tiktok_status\"},\n  {name: \"Publish to Twitter\", dbField: \"twitter_status\"}\n];\n\n// Track platform statuses for database update\nconst platformStatuses = {};\n\nfor (const platform of platformNodes) {\n  try {\n    const platformResponse = $node[platform.name].json;\n    // Extract platform name from node name\n    const platformName = platform.name.replace(\"Publish to \", \"\").toLowerCase();\n    \n    publishingResults.platforms.push({\n      platform: platformName,\n      status: \"published\",\n      response: platformResponse\n    });\n    \n    // Set status for database update\n    platformStatuses[platform.dbField] = \"published\";\n  } catch (e) {\n    // If we can't get data from the node, it might be disabled or failed\n    const platformName = platform.name.replace(\"Publish to \", \"\").toLowerCase();\n    \n    publishingResults.platforms.push({\n      platform: platformName,\n      status: \"skipped\",\n      error: e.message\n    });\n    \n    // Set status for database update\n    platformStatuses[platform.dbField] = \"skipped\";\n  }\n}\n\n// Create a summary for the log\nconst successPlatforms = publishingResults.platforms\n                         .filter(p => p.status === \"published\")\n                         .map(p => p.platform);\n\nconst summary = {\n  contentId: publishingResults.contentId,\n  timestamp: publishingResults.timestamp,\n  successfulPlatforms: successPlatforms,\n  overallStatus: successPlatforms.length > 0 ? \"success\" : \"failed\",\n  platformStatuses: platformStatuses\n};\n\n// Log to console\nconsole.log(`Published to: ${successPlatforms.join(\", \")}`);\n\n// Convert to formatted JSON string for saving\nconst jsonString = JSON.stringify(publishingResults, null, 2);\nconst binaryData = Buffer.from(jsonString, 'utf-8');\n\nreturn [\n  {\n    json: {\n      ...summary,\n      publishingResults\n    },\n    binary: {\n      data: {\n        data: binaryData,\n        mimeType: 'application/json',\n        fileName: `publishing_report_${publishingResults.contentId}.json`\n      }\n    }\n  }\n];"
+      },
+      "name": "Process Publishing Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        200,
+        180
+      ],
+      "id": "3b0e6efd-8ad4-4b0a-9e77-7cb8e2dc97ac"
+    },
+    {
+      "parameters": {
+        "fileName": "={{ $json.directories.main }}/{{ $json.contentId }}_publishing_report.json",
+        "options": {
+          "append": false
+        }
+      },
+      "name": "Save Publishing Report",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        400,
+        180
+      ],
+      "id": "ed149178-35ee-46fe-8733-fc4c597a1d86"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=UPDATE content_videos SET\n  youtube_status = '{{ $json.platformStatuses.youtube_status }}',\n  instagram_status = '{{ $json.platformStatuses.instagram_status }}',\n  tiktok_status = '{{ $json.platformStatuses.tiktok_status }}',\n  twitter_status = '{{ $json.platformStatuses.twitter_status }}',\n  metadata = '{{ JSON.stringify($json.publishingResults) }}'\nWHERE content_id = '{{ $json.contentId }}'\nRETURNING *;",
+        "additionalFields": {}
+      },
+      "name": "Update Publishing Status",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        600,
+        180
+      ],
+      "id": "f4fb34e6-74e0-4eeb-94c2-19f6b3556c12",
+      "credentials": {
+        "postgres": {
+          "id": "setkxZ59G66ed7Ts",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "command": "echo \"Publishing completed for {{ $json.contentId }} at {{ $json.timestamp }}. Success: {{ $json.successfulPlatforms.join(\", \") }}\" >> /data/shared/logs/publishing.log"
+      },
+      "name": "Log Publishing Status",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        800,
+        180
+      ],
+      "id": "a23f199d-4de0-45bc-b490-f72d597c1773"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        180
+      ],
+      "id": "0f6fc1fa-955d-4067-862f-a3278d30a6bf"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Publishing Webhook": {
+      "main": [
+        [
+          {
+            "node": "Prepare Publishing Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Publishing Data": {
+      "main": [
+        [
+          {
+            "node": "Check Existing Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Existing Content": {
+      "main": [
+        [
+          {
+            "node": "Content Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Content Exists?": {
+      "main": [
+        [
+          {
+            "node": "Create Content Record",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Content Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Content Record": {
+      "main": [
+        [
+          {
+            "node": "Upload to Blotato Media",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Content Status": {
+      "main": [
+        [
+          {
+            "node": "Upload to Blotato Media",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to Blotato Media": {
+      "main": [
+        [
+          {
+            "node": "Extract Media URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Media URL": {
+      "main": [
+        [
+          {
+            "node": "Publish to YouTube",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Publish to Instagram",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Publish to TikTok",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Publish to Twitter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish to YouTube": {
+      "main": [
+        [
+          {
+            "node": "Process Publishing Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish to Instagram": {
+      "main": [
+        [
+          {
+            "node": "Process Publishing Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish to TikTok": {
+      "main": [
+        [
+          {
+            "node": "Process Publishing Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish to Twitter": {
+      "main": [
+        [
+          {
+            "node": "Process Publishing Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Publishing Results": {
+      "main": [
+        [
+          {
+            "node": "Save Publishing Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Publishing Report": {
+      "main": [
+        [
+          {
+            "node": "Update Publishing Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Publishing Status": {
+      "main": [
+        [
+          {
+            "node": "Log Publishing Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Publishing Status": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "66453bae-6a1c-4b4f-8fd0-3cf23fde5bc4",
+  "meta": {
+    "instanceId": "4e52379637041ff10799c16d4fe1175e0d88d75b24685ea7cde857d7eef2b827"
+  },
+  "id": "mZ3kdMEuepBjXTI4",
+  "tags": [
+    {
+      "createdAt": "2025-02-26T15:32:11.089Z",
+      "updatedAt": "2025-02-26T15:32:11.089Z",
+      "id": "He5P86YILA9R8z98",
+      "name": "content-creation"
+    },
+    {
+      "createdAt": "2025-03-18T05:33:15.795Z",
+      "updatedAt": "2025-03-18T05:33:15.795Z",
+      "id": "iyvzHA8UQn4TK4xE",
+      "name": "publishing"
+    }
+  ]
+}
